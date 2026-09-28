@@ -68,6 +68,11 @@ def check_monitoring(hosts):
             print("Error for [" + url + "]: could not access monitoring")
             exit(-1)
 
+        # JVM metrics alone do not prove that the ZooKeeper JMX rules loaded.
+        if not any(line.startswith("zookeeper_") for line in response.text.splitlines()):
+            print("Error for [" + url + "]: missing ZooKeeper JMX metrics")
+            exit(-1)
+
         # test for the native metrics
         url = host + ":7000/metrics"
         response = try_get(url)

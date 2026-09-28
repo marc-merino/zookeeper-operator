@@ -326,4 +326,122 @@ mod tests {
             ["simple-zookeeper-rolebinding"]
         );
     }
+
+    #[test]
+    fn jmx_config_is_emitted_and_mounted_for_every_server_role_group() {
+        let cluster = validated_cluster(&minimal_zk(
+            r#"
+            apiVersion: zookeeper.stackable.tech/v1alpha1
+            kind: ZookeeperCluster
+            metadata:
+              name: simple-zookeeper
+            spec:
+              image:
+                productVersion: "3.9.6"
+              servers:
+                jvmArgumentOverrides:
+                  add:
+                    - -Dexample.role=true
+                roleGroups:
+                  default:
+                    replicas: 3
+                  secondary:
+                    replicas: 1
+                    jvmArgumentOverrides:
+                      removeRegex:
+                        - -Dexample.role=.*
+                      add:
+                        - -Dexample.group=true
+            "#,
+        ));
+        let resources = build(&cluster, &cluster_info()).expect("build succeeds");
+        assert_eq!(resources.config_maps.len(), 2);
+        assert_eq!(resources.stateful_sets.len(), 2);
+
+        for stateful_set in &resources.stateful_sets {
+            let pod = stateful_set
+                .spec
+                .as_ref()
+                .unwrap()
+                .template
+                .spec
+                .as_ref()
+                .unwrap();
+            let server = pod
+                .containers
+                .iter()
+                .find(|c| c.name == "zookeeper")
+                .unwrap();
+            let mount = server
+                .volume_mounts
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|mount| mount.name == "config")
+                .expect("existing config mount");
+            assert_eq!(mount.mount_path, "/stackable/config");
+            assert!(mount.sub_path.is_none());
+            let volume = pod
+                .volumes
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|volume| volume.name == mount.name)
+                .unwrap();
+            let source = volume.config_map.as_ref().expect("config uses a ConfigMap");
+            assert!(
+                source.items.is_none(),
+                "all ConfigMap entries must be mounted"
+            );
+            let config_map = resources
+                .config_maps
+                .iter()
+                .find(|cm| cm.metadata.name.as_deref() == Some(source.name.as_str()))
+                .unwrap();
+            assert_eq!(config_map.metadata.name, stateful_set.metadata.name);
+            let data = config_map.data.as_ref().unwrap();
+            let yaml = &data["jmx-exporter.yaml"];
+            assert_eq!(yaml, include_str!("build/properties/jmx-exporter.yaml"));
+            let parsed: serde_yaml::Value =
+                serde_yaml::from_str(yaml).expect("valid exporter YAML");
+            assert_eq!(parsed["rules"].as_sequence().unwrap().len(), 7);
+
+            let flags = server
+                .env
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|env| env.name == "SERVER_JVMFLAGS")
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap();
+            let agents: Vec<_> = flags
+                .split_whitespace()
+                .filter(|arg| arg.starts_with("-javaagent:"))
+                .collect();
+            assert_eq!(
+                agents,
+                [format!(
+                    "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9505:{}/jmx-exporter.yaml",
+                    mount.mount_path
+                )]
+            );
+            // The only path under /stackable/jmx is the exporter JAR, never its YAML.
+            assert!(!flags.contains("/stackable/jmx/server.yaml"));
+            if stateful_set
+                .metadata
+                .name
+                .as_ref()
+                .unwrap()
+                .ends_with("secondary")
+            {
+                assert!(flags.contains("-Dexample.group=true"));
+                assert!(!flags.contains("-Dexample.role=true"));
+            } else {
+                assert!(flags.contains("-Dexample.role=true"));
+                assert!(!flags.contains("-Dexample.group=true"));
+            }
+        }
+    }
 }

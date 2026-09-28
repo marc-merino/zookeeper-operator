@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Provide JMX Exporter configuration in each server role-group ConfigMap instead of reading it from the product image,
+  preserving the existing metric rules ([stackabletech/issues#160](https://github.com/stackabletech/issues/issues/160)).
 - BREAKING: `spec.image.stackableVersion` must now be a full, valid semver version, e.g. `26.7.1`.
   Abbreviated values such as `26.7` are no longer accepted ([#1086]).
 - BREAKING: `spec.image.pullPolicy` now defaults to `IfNotPresent` for non-floating tags instead of

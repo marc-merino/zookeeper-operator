@@ -12,6 +12,8 @@ pub mod zoo_cfg;
 pub enum ConfigFileName {
     #[strum(serialize = "zoo.cfg")]
     ZooCfg,
+    #[strum(serialize = "jmx-exporter.yaml")]
+    JmxExporter,
     #[strum(serialize = "security.properties")]
     SecurityProperties,
     #[strum(serialize = "logback.xml")]

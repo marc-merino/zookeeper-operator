@@ -28,7 +28,8 @@ fn construct_jvm_args(rolegroup_config: &ZookeeperRoleGroupConfig) -> Vec<String
             ConfigFileName::SecurityProperties
         ),
         format!(
-            "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={JMX_METRICS_PORT}:/stackable/jmx/server.yaml"
+            "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={JMX_METRICS_PORT}:{STACKABLE_CONFIG_DIR}/{}",
+            ConfigFileName::JmxExporter
         ),
         format!(
             "-Dlogback.configurationFile={STACKABLE_LOG_CONFIG_DIR}/{config_file}",
@@ -126,7 +127,7 @@ mod tests {
         assert_eq!(
             non_heap_jvm_args,
             "-Djava.security.properties=/stackable/config/security.properties \
-            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9505:/stackable/jmx/server.yaml \
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9505:/stackable/config/jmx-exporter.yaml \
             -Dlogback.configurationFile=/stackable/log_config/logback.xml"
         );
         assert_eq!(zk_server_heap_env, "409");
@@ -173,12 +174,46 @@ mod tests {
         assert_eq!(
             non_heap_jvm_args,
             "-Djava.security.properties=/stackable/config/security.properties \
-            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9505:/stackable/jmx/server.yaml \
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9505:/stackable/config/jmx-exporter.yaml \
             -Dlogback.configurationFile=/stackable/log_config/logback.xml \
             -Dhttps.proxyHost=proxy.my.corp \
             -Djava.net.preferIPv4Stack=true \
             -Dhttps.proxyPort=1234"
         );
         assert_eq!(zk_server_heap_env, "34406");
+    }
+
+    #[test]
+    fn jmx_agent_can_still_be_replaced_by_jvm_overrides() {
+        let zk = minimal_zk(
+            r#"
+            apiVersion: zookeeper.stackable.tech/v1alpha1
+            kind: ZookeeperCluster
+            metadata:
+              name: simple-zookeeper
+            spec:
+              image:
+                productVersion: "3.9.6"
+              servers:
+                roleGroups:
+                  default:
+                    replicas: 1
+                    jvmArgumentOverrides:
+                      removeRegex:
+                        - "-javaagent:.*"
+                      add:
+                        - "-javaagent:/custom/exporter.jar=9505:/custom/rules.yaml"
+            "#,
+        );
+        let flags = construct_non_heap_jvm_args(&server_default(&zk));
+        let agents: Vec<_> = flags
+            .split_whitespace()
+            .filter(|arg| arg.starts_with("-javaagent:"))
+            .collect();
+        assert_eq!(
+            agents,
+            ["-javaagent:/custom/exporter.jar=9505:/custom/rules.yaml"]
+        );
+        assert!(!flags.contains("jmx-exporter.yaml"));
     }
 }

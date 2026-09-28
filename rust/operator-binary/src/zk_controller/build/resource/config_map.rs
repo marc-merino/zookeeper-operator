@@ -78,6 +78,12 @@ pub fn build_server_rolegroup_config_map(
         })?,
     );
 
+    // Preserve the exporter rules verbatim; they are owned by the operator.
+    data.insert(
+        ConfigFileName::JmxExporter.to_string(),
+        include_str!("../properties/jmx-exporter.yaml").to_owned(),
+    );
+
     // security.properties
     data.insert(
         ConfigFileName::SecurityProperties.to_string(),

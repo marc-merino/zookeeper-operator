@@ -8,6 +8,10 @@ Depending on the SDP version, different ZooKeeper monitoring systems are used to
 is used, but will be removed in a later release. Starting with SDP 25.7 the built-in Prometheus support of ZooKeeper is also added.
 The naming of the metrics differs between the two systems.
 
+The operator provides the JMX Exporter rules as `jmx-exporter.yaml` in each server role-group ConfigMap.
+The exporter reads `/stackable/config/jmx-exporter.yaml` through the existing configuration mount; the metric rules are unchanged.
+The exporter JAR remains part of the product image at `/stackable/jmx/jmx_prometheus_javaagent.jar`.
+
 == Metrics
 
 Starting with SDP 25.7 ZooKeeper is configured to export metrics using the built-in Prometheus provider. More on the Prometheus provider in
